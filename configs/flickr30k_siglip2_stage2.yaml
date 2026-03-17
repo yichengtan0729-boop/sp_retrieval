@@ -1,0 +1,44 @@
+seed: 42
+device: auto
+output_dir: outputs/flickr30k_siglip2_stage2
+
+dataset:
+  annotation_json: data/processed/flickr30k/flickr30k.json
+  images_root: data/raw/flickr30k_hf
+  train_split: train
+  val_split: validation
+  test_split: test
+  candidate_cache_train: outputs/flickr30k_siglip2_stage1/candidates_stage1_train_top64.json
+  candidate_cache_val: outputs/flickr30k_siglip2_stage1/candidates_stage1_val_top64.json
+  candidate_cache_test: outputs/flickr30k_siglip2_stage1/candidates_stage1_test_top64.json
+  batch_size: 8
+  num_workers: 2
+  pin_memory: true
+
+backbone:
+  type: siglip2
+  model_name: google/siglip2-base-patch16-512
+  pretrained: null
+  freeze: true
+  return_tokens: true
+  max_text_len: 77
+
+model:
+  token_dim: 512
+  num_shared_slots: 8
+  attn_heads: 8
+  dropout: 0.1
+  use_redundant_branch: true
+
+loss:
+  lambda_shared: 1.0
+  lambda_unique: 0.3
+  lambda_redundant: 0.1
+  lambda_slot_div: 0.05
+
+optim:
+  lr: 2.0e-4
+  weight_decay: 1.0e-4
+
+train:
+  epochs: 5
