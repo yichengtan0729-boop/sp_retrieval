@@ -1,0 +1,6 @@
+torch>=2.1
+open-clip-torch>=2.24.0
+torchvision>=0.16
+Pillow>=10.0
+tqdm>=4.66
+PyYAML>=6.0

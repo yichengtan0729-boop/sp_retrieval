@@ -1,0 +1,41 @@
+seed: 42
+device: auto
+output_dir: outputs/flickr30k_vitb32
+
+dataset:
+  annotation_json: data/processed/flickr30k/flickr30k.json
+  images_root: data/raw/flickr30k_hf
+  train_split: train
+  val_split: validation
+  test_split: test
+  batch_size: 64
+  num_workers: 0
+  pin_memory: true
+
+backbone:
+  type: open_clip
+  model_name: ViT-B-32
+  pretrained: openai
+  freeze: true
+
+model:
+  hidden_dim: 1024
+  shared_dim: 512
+  private_dim: 512
+  temperature: 0.07
+  lambda_recon: 0.5
+  lambda_private: 0.05
+  lambda_ortho: 0.1
+  lambda_var: 0.05
+  fusion_init_logits: [2.4, 0.6]
+
+optim:
+  lr: 1.0e-4
+  weight_decay: 1.0e-4
+
+train:
+  epochs: 10
+  grad_clip_norm: 5.0
+  lambda_fused: 1.0
+  lambda_fusion_reg: 0.05
+  fusion_temperature: 0.07

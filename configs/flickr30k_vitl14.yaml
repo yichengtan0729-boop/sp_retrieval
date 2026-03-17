@@ -1,0 +1,41 @@
+seed: 42
+device: auto
+output_dir: outputs/flickr30k_vitl14_main
+
+dataset:
+  annotation_json: data/processed/flickr30k/flickr30k.json
+  images_root: data/raw/flickr30k_hf
+  train_split: train
+  val_split: validation
+  test_split: test
+  batch_size: 32
+  num_workers: 0
+  pin_memory: true
+
+backbone:
+  type: open_clip
+  model_name: ViT-L-14
+  pretrained: openai
+  freeze: true
+
+model:
+  hidden_dim: 1024
+  shared_dim: 768
+  private_dim: 256
+  temperature: 0.07
+  lambda_recon: 0.2
+  lambda_private: 0.02
+  lambda_ortho: 0.1
+  lambda_var: 0.05
+  fusion_init_logits: [2.8, 0.2]
+
+optim:
+  lr: 5.0e-5
+  weight_decay: 1.0e-4
+
+train:
+  epochs: 15
+  grad_clip_norm: 5.0
+  lambda_fused: 1.0
+  lambda_fusion_reg: 0.1
+  fusion_temperature: 0.07

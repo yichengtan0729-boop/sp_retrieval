@@ -1,0 +1,7 @@
+(sp_retrieval) E:\sp_retrieval_full_v1>
+python scripts\train.py --config configs\flickr30k_vitl14.yaml
+python scripts\eval.py --config configs\flickr30k_vitl14.yaml --ckpt outputs\flickr30k_vitl14_main\checkpoints\best.pt --split test
+python scripts\eval_branches.py --config configs\flickr30k_vitl14.yaml --ckpt outputs\flickr30k_vitl14_main\checkpoints\best.pt --split test
+python scripts\eval_disentangle.py --config configs\flickr30k_vitl14.yaml --ckpt outputs\flickr30k_vitl14_main\checkpoints\best.pt --split test
+python scripts\eval_nnn.py --config configs\flickr30k_vitl14.yaml --ckpt outputs\flickr30k_vitl14_main\checkpoints\best.pt --split test --ref_split train --branch clip --top_k 10 --alternate_ks 128 --alternate_weight 0.75
+python scripts\eval_nnn.py --config configs\flickr30k_vitl14.yaml --ckpt outputs\flickr30k_vitl14_main\checkpoints\best.pt --split test --ref_split train --branch shared --top_k 10 --alternate_ks 128 --alternate_weight 0.75

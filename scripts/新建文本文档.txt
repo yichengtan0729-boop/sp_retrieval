@@ -1,0 +1,53 @@
+[clip]
+  i2t_R@1: 0.7770
+  t2i_R@1: 0.5648
+  i2t_R@5: 0.9460
+  t2i_R@5: 0.8134
+  i2t_R@10: 0.9710
+  t2i_R@10: 0.8770
+  rsum: 4.9492
+  mean_R@1: 0.6709
+[shared]
+  i2t_R@1: 0.6700
+  t2i_R@1: 0.5396
+  i2t_R@5: 0.8930
+  t2i_R@5: 0.8292
+  i2t_R@10: 0.9430
+  t2i_R@10: 0.8984
+  rsum: 4.7732
+  mean_R@1: 0.6048
+[fused]
+  i2t_R@1: 0.7950
+  t2i_R@1: 0.6428
+  i2t_R@5: 0.9560
+  t2i_R@5: 0.8748
+  i2t_R@10: 0.9820
+  t2i_R@10: 0.9326
+  rsum: 5.1832
+  mean_R@1: 0.7189
+
+==== Disentanglement diagnostics ====
+
+[1] shared-private within-modality orthogonality
+img | mean abs cos(sx, px): 0.013109921477735043
+txt | mean abs cos(sy, py): 0.008672254160046577
+img | cross-cov mean abs   : 0.15013690292835236
+img | cross-cov fro norm   : 94.91394805908203
+txt | cross-cov mean abs   : 0.13851654529571533
+txt | cross-cov fro norm   : 86.71281433105469
+
+[2] cross-modal alignment
+shared | mean cos(sx, sy): 0.5654578804969788
+private| mean cos(px, py): -0.00019611511379480362
+
+[3] leakage check
+mean cos(sx, py): -0.0006252570892684162
+mean cos(sy, px): -0.0006081399042159319
+
+[4] feature variance
+ux std: 0.30223700404167175
+uy std: 0.23068982362747192
+sx std: 0.7617641687393188
+sy std: 0.8664547801017761
+px std: 1.198212742805481
+py std: 1.2355399131774902
