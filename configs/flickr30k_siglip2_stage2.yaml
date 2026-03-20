@@ -21,7 +21,7 @@ backbone:
   pretrained: null
   freeze: true
   return_tokens: true
-  max_text_len: 77
+  max_text_len: 64
 
 model:
   token_dim: 512

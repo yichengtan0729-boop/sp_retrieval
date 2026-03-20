@@ -1,15 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Sequence
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import open_clip
-
-from torchvision import transforms
-from torchvision.transforms import InterpolationMode
+from PIL import Image
 
 
 @dataclass
@@ -19,7 +17,7 @@ class BackboneConfig:
     pretrained: Optional[str] = None
     freeze: bool = True
     return_tokens: bool = False
-    max_text_len: int = 77
+    max_text_len: Optional[int] = None
 
 
 class BaseBackbone(nn.Module):
@@ -29,19 +27,14 @@ class BaseBackbone(nn.Module):
         self.token_dim: Optional[int] = None
         self.freeze: bool = True
         self.preprocess = None
+        self.uses_processor_images = False
 
     def maybe_no_grad(self):
         return torch.no_grad() if self.freeze else torch.enable_grad()
 
-    def encode_image(self, images: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError
-
-    def encode_text(self, texts: List[str], device: torch.device) -> torch.Tensor:
-        raise NotImplementedError
-
     def forward(
         self,
-        images: torch.Tensor,
+        images,
         texts: List[str],
         device: torch.device,
         return_tokens: Optional[bool] = None,
@@ -64,6 +57,7 @@ class OpenCLIPBackbone(BaseBackbone):
         self.preprocess = preprocess
         self.tokenizer = tokenizer
         self.freeze = cfg.freeze
+        self.uses_processor_images = False
 
         if hasattr(model, "text_projection") and model.text_projection is not None:
             self.output_dim = model.text_projection.shape[1]
@@ -130,8 +124,17 @@ class OpenCLIPBackbone(BaseBackbone):
         g = self.encode_text(texts, device)
         return g.unsqueeze(1)
 
-    def forward(self, images, texts, device, return_tokens: Optional[bool] = None):
+    def forward(
+        self,
+        images,
+        texts: List[str],
+        device: torch.device,
+        return_tokens: Optional[bool] = None,
+    ):
         use_tokens = self.cfg.return_tokens if return_tokens is None else return_tokens
+
+        if not torch.is_tensor(images):
+            raise TypeError("OpenCLIPBackbone expects images as a batched tensor.")
 
         image_global = self.encode_image(images)
         text_global = self.encode_text(texts, device)
@@ -156,12 +159,12 @@ class OpenCLIPBackbone(BaseBackbone):
 
 class SigLIP2Backbone(BaseBackbone):
     """
-    HuggingFace SigLIP / SigLIP2 wrapper.
+    Full-processor SigLIP2 path.
 
-    Important:
-    - exposes `preprocess` so current dataset/build.py can keep working
-    - supports global features immediately
-    - token outputs are optional and only used later in stage2
+    Key points:
+    - images should be a list of PIL.Image for SigLIP2
+    - processor handles image/text preprocessing end-to-end
+    - max_text_len is automatically clipped to model max_position_embeddings
     """
 
     def __init__(self, cfg: BackboneConfig):
@@ -173,7 +176,7 @@ class SigLIP2Backbone(BaseBackbone):
             from transformers import AutoModel, AutoProcessor
         except ImportError as e:
             raise ImportError(
-                "SigLIP2 requires transformers. Install it with: pip install transformers"
+                "SigLIP2 requires transformers. Install with: pip install transformers"
             ) from e
 
         self.processor = AutoProcessor.from_pretrained(cfg.model_name)
@@ -193,51 +196,69 @@ class SigLIP2Backbone(BaseBackbone):
         self.output_dim = hidden_size
         self.token_dim = hidden_size
 
-        image_proc = self.processor.image_processor
-        size_cfg = image_proc.size
+        self.preprocess = None
+        self.uses_processor_images = True
 
-        crop_size = None
-        if isinstance(size_cfg, dict):
-            if "height" in size_cfg and "width" in size_cfg:
-                crop_size = (size_cfg["height"], size_cfg["width"])
-            elif "shortest_edge" in size_cfg:
-                crop_size = (size_cfg["shortest_edge"], size_cfg["shortest_edge"])
+        # text length cap
+        self.model_max_text_len = None
+        if hasattr(self.model.config, "text_config") and hasattr(self.model.config.text_config, "max_position_embeddings"):
+            self.model_max_text_len = int(self.model.config.text_config.max_position_embeddings)
+        elif hasattr(self.model.config, "max_position_embeddings"):
+            self.model_max_text_len = int(self.model.config.max_position_embeddings)
+        else:
+            self.model_max_text_len = 64
 
-        if crop_size is None:
-            crop_size = (224, 224)
-
-        image_mean = getattr(image_proc, "image_mean", [0.5, 0.5, 0.5])
-        image_std = getattr(image_proc, "image_std", [0.5, 0.5, 0.5])
-
-        self.preprocess = transforms.Compose([
-            transforms.Resize(crop_size, interpolation=InterpolationMode.BICUBIC),
-            transforms.CenterCrop(crop_size),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=image_mean, std=image_std),
-        ])
+        if cfg.max_text_len is None:
+            self.max_text_len = self.model_max_text_len
+        else:
+            self.max_text_len = min(int(cfg.max_text_len), self.model_max_text_len)
 
         if self.freeze:
             for p in self.model.parameters():
                 p.requires_grad = False
             self.model.eval()
 
-    def _prepare_text(self, texts: List[str], device: torch.device):
+    def _prepare_inputs(
+        self,
+        images: Sequence[Image.Image],
+        texts: List[str],
+        device: torch.device,
+    ):
+        proc = self.processor(
+            images=list(images),
+            text=texts,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=self.max_text_len,
+        )
+        return {k: v.to(device) for k, v in proc.items()}
+
+    def _prepare_text_only(self, texts: List[str], device: torch.device):
         proc = self.processor(
             text=texts,
             return_tensors="pt",
             padding=True,
             truncation=True,
-            max_length=self.cfg.max_text_len,
+            max_length=self.max_text_len,
         )
         return {k: v.to(device) for k, v in proc.items()}
 
-    def encode_image(self, images: torch.Tensor) -> torch.Tensor:
+    def encode_image(self, images, device: torch.device) -> torch.Tensor:
+        if not isinstance(images, (list, tuple)):
+            raise TypeError("SigLIP2Backbone expects images as a list of PIL images.")
+        proc = self.processor(
+            images=list(images),
+            return_tensors="pt",
+        )
+        pixel_values = proc["pixel_values"].to(device)
+
         with self.maybe_no_grad():
-            x = self.model.get_image_features(pixel_values=images)
+            x = self.model.get_image_features(pixel_values=pixel_values)
             return F.normalize(x.float(), dim=-1)
 
     def encode_text(self, texts: List[str], device: torch.device) -> torch.Tensor:
-        proc = self._prepare_text(texts, device)
+        proc = self._prepare_text_only(texts, device)
         with self.maybe_no_grad():
             x = self.model.get_text_features(
                 input_ids=proc["input_ids"],
@@ -245,15 +266,25 @@ class SigLIP2Backbone(BaseBackbone):
             )
             return F.normalize(x.float(), dim=-1)
 
-    def forward(self, images, texts, device, return_tokens: Optional[bool] = None):
+    def forward(
+        self,
+        images,
+        texts: List[str],
+        device: torch.device,
+        return_tokens: Optional[bool] = None,
+    ):
         use_tokens = self.cfg.return_tokens if return_tokens is None else return_tokens
-        proc = self._prepare_text(texts, device)
+
+        if not isinstance(images, (list, tuple)):
+            raise TypeError("SigLIP2Backbone forward expects images as a list of PIL images.")
+
+        proc = self._prepare_inputs(images, texts, device)
 
         with self.maybe_no_grad():
             outputs = self.model(
                 input_ids=proc["input_ids"],
                 attention_mask=proc.get("attention_mask", None),
-                pixel_values=images,
+                pixel_values=proc["pixel_values"],
                 output_hidden_states=True,
                 return_dict=True,
             )

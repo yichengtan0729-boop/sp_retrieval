@@ -7,7 +7,8 @@ from .datasets import RetrievalJsonDataset, collate_fn
 def build_dataloaders(cfg):
     dcfg = cfg["dataset"]
     backbone = build_backbone(cfg["backbone"])
-    transform = backbone.preprocess
+
+    transform = None if getattr(backbone, "uses_processor_images", False) else backbone.preprocess
 
     train_ds = RetrievalJsonDataset(
         dcfg["annotation_json"],

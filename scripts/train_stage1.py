@@ -27,6 +27,7 @@ from sp_retrieval.training.trainer_stage1 import (
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", required=True)
+    ap.add_argument("--skip_head", action="store_true")
     args = ap.parse_args()
 
     cfg = load_config(args.config)
@@ -37,23 +38,10 @@ def main():
     backbone, train_loader, val_loader, test_loader = build_dataloaders(cfg)
     backbone = backbone.to(device)
 
-    head = Stage1ProjectionHead(
-        input_dim=backbone.output_dim,
-        proj_dim=cfg["model"]["proj_dim"],
-        dropout=cfg["model"].get("dropout", 0.1),
-    ).to(device)
-
-    optimizer = torch.optim.AdamW(
-        head.parameters(),
-        lr=cfg["optim"]["lr"],
-        weight_decay=cfg["optim"]["weight_decay"],
-    )
-
     print(f"Device: {device}")
     print(f"Backbone output dim: {backbone.output_dim}")
-    print(f"Head trainable params: {count_parameters(head):,}")
 
-    # raw backbone metrics first
+    # 1) raw backbone first: this is the main sanity target
     raw_val_metrics, raw_val_feats, raw_val_aux = evaluate(backbone, val_loader, device, head=None)
     raw_test_metrics, raw_test_feats, raw_test_aux = evaluate(backbone, test_loader, device, head=None)
 
@@ -72,6 +60,24 @@ def main():
     print("\n[Backbone / Test]")
     for k, v in raw_test_metrics.items():
         print(f"  {k}: {v:.4f}")
+
+    if args.skip_head:
+        return
+
+    # 2) optional projection head
+    head = Stage1ProjectionHead(
+        input_dim=backbone.output_dim,
+        proj_dim=cfg["model"]["proj_dim"],
+        dropout=cfg["model"].get("dropout", 0.1),
+    ).to(device)
+
+    print(f"Head trainable params: {count_parameters(head):,}")
+
+    optimizer = torch.optim.AdamW(
+        head.parameters(),
+        lr=cfg["optim"]["lr"],
+        weight_decay=cfg["optim"]["weight_decay"],
+    )
 
     best_path, best_score = fit_stage1(
         backbone=backbone,

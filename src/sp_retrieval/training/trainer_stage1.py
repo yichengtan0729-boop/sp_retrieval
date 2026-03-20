@@ -2,13 +2,11 @@ from __future__ import annotations
 
 from collections import defaultdict
 from pathlib import Path
-
 import csv
+
 import torch
 import torch.nn.functional as F
 from tqdm import tqdm
-
-from ..utils.misc import save_json
 
 
 def symmetric_contrastive_loss(img_feat: torch.Tensor, txt_feat: torch.Tensor, temperature: float = 0.07):
@@ -17,6 +15,12 @@ def symmetric_contrastive_loss(img_feat: torch.Tensor, txt_feat: torch.Tensor, t
     loss_i = F.cross_entropy(logits, labels)
     loss_t = F.cross_entropy(logits.t(), labels)
     return 0.5 * (loss_i + loss_t)
+
+
+def _move_images_if_tensor(images, device):
+    if torch.is_tensor(images):
+        return images.to(device, non_blocking=True)
+    return images
 
 
 @torch.no_grad()
@@ -29,7 +33,7 @@ def collect_embeddings(backbone, loader, device, head=None):
     image_ids, text_ids, image_paths = [], [], []
 
     for batch in tqdm(loader, desc="Collect", leave=False):
-        images = batch["images"].to(device, non_blocking=True)
+        images = _move_images_if_tensor(batch["images"], device)
         texts = batch["texts"]
 
         out = backbone(images, texts, device=device, return_tokens=False)
@@ -170,7 +174,7 @@ def train_one_epoch(backbone, head, loader, optimizer, device, temperature):
     total_n = 0
 
     for batch in tqdm(loader, desc="Train", leave=False):
-        images = batch["images"].to(device, non_blocking=True)
+        images = _move_images_if_tensor(batch["images"], device)
         texts = batch["texts"]
 
         with torch.no_grad():
@@ -183,7 +187,7 @@ def train_one_epoch(backbone, head, loader, optimizer, device, temperature):
         loss.backward()
         optimizer.step()
 
-        bs = images.size(0)
+        bs = len(texts)
         total_loss += loss.item() * bs
         total_n += bs
 

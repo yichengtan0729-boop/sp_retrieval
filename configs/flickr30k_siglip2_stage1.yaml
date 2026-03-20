@@ -8,7 +8,7 @@ dataset:
   train_split: train
   val_split: validation
   test_split: test
-  batch_size: 32
+  batch_size: 16
   num_workers: 4
   pin_memory: true
 
@@ -18,7 +18,7 @@ backbone:
   pretrained: null
   freeze: true
   return_tokens: true
-  max_text_len: 77
+  max_text_len: 64
 
 model:
   proj_dim: 768

@@ -38,6 +38,7 @@ def main():
     ap.add_argument("--config", required=True)
     ap.add_argument("--split", default="val", choices=["train", "val", "test"])
     ap.add_argument("--topk", type=int, default=64)
+    ap.add_argument("--use_stage1_head", action="store_true")
     args = ap.parse_args()
 
     cfg = load_config(args.config)
@@ -50,35 +51,29 @@ def main():
 
     loader = {"train": train_loader, "val": val_loader, "test": test_loader}[args.split]
 
-    # raw backbone candidates
-    raw_feats = collect_embeddings(backbone, loader, device, head=None)
-    raw_records, raw_metrics = build_topk_records(raw_feats, topk=args.topk)
-    with open(out_dir / f"candidates_backbone_{args.split}_top{args.topk}.json", "w", encoding="utf-8") as f:
-        json.dump(raw_records, f, ensure_ascii=False, indent=2)
+    head = None
+    suffix = "backbone"
 
-    # stage1 projected candidates
-    head = Stage1ProjectionHead(
-        input_dim=backbone.output_dim,
-        proj_dim=cfg["model"]["proj_dim"],
-        dropout=cfg["model"].get("dropout", 0.1),
-    ).to(device)
+    if args.use_stage1_head:
+        head = Stage1ProjectionHead(
+            input_dim=backbone.output_dim,
+            proj_dim=cfg["model"]["proj_dim"],
+            dropout=cfg["model"].get("dropout", 0.1),
+        ).to(device)
+        ckpt_path = Path(cfg["output_dir"]) / "best_stage1.pt"
+        ckpt = torch.load(ckpt_path, map_location=device)
+        head.load_state_dict(ckpt["head"])
+        suffix = "stage1"
 
-    ckpt_path = Path(cfg["output_dir"]) / "best_stage1.pt"
-    ckpt = torch.load(ckpt_path, map_location=device)
-    head.load_state_dict(ckpt["head"])
+    feats = collect_embeddings(backbone, loader, device, head=head)
+    records, metrics = build_topk_records(feats, topk=args.topk)
 
-    proj_feats = collect_embeddings(backbone, loader, device, head=head)
-    proj_records, proj_metrics = build_topk_records(proj_feats, topk=args.topk)
-    with open(out_dir / f"candidates_stage1_{args.split}_top{args.topk}.json", "w", encoding="utf-8") as f:
-        json.dump(proj_records, f, ensure_ascii=False, indent=2)
+    out_path = out_dir / f"candidates_{suffix}_{args.split}_top{args.topk}.json"
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(records, f, ensure_ascii=False, indent=2)
 
-    print(f"Saved raw candidates to: {out_dir / f'candidates_backbone_{args.split}_top{args.topk}.json'}")
-    print(f"Saved stage1 candidates to: {out_dir / f'candidates_stage1_{args.split}_top{args.topk}.json'}")
-    print("[Backbone metrics]")
-    for k, v in raw_metrics.items():
-        print(f"  {k}: {v:.4f}")
-    print("[Stage1 metrics]")
-    for k, v in proj_metrics.items():
+    print(f"Saved candidates to: {out_path}")
+    for k, v in metrics.items():
         print(f"  {k}: {v:.4f}")
 
 
