@@ -41,7 +41,6 @@ def main():
     print(f"Device: {device}")
     print(f"Backbone output dim: {backbone.output_dim}")
 
-    # 1) raw backbone first: this is the main sanity target
     raw_val_metrics, raw_val_feats, raw_val_aux = evaluate(backbone, val_loader, device, head=None)
     raw_test_metrics, raw_test_feats, raw_test_aux = evaluate(backbone, test_loader, device, head=None)
 
@@ -55,16 +54,15 @@ def main():
 
     print("\n[Backbone / Val]")
     for k, v in raw_val_metrics.items():
-        print(f"  {k}: {v:.4f}")
+        print(f" {k}: {v:.4f}")
 
     print("\n[Backbone / Test]")
     for k, v in raw_test_metrics.items():
-        print(f"  {k}: {v:.4f}")
+        print(f" {k}: {v:.4f}")
 
     if args.skip_head:
         return
 
-    # 2) optional projection head
     head = Stage1ProjectionHead(
         input_dim=backbone.output_dim,
         proj_dim=cfg["model"]["proj_dim"],
@@ -72,10 +70,16 @@ def main():
     ).to(device)
 
     print(f"Head trainable params: {count_parameters(head):,}")
+    print(f"Backbone trainable params: {count_parameters(backbone):,}")
+
+    lr_main = cfg["optim"]["lr"]
+    lr_backbone = cfg["optim"].get("lr_backbone", lr_main * 0.1)
 
     optimizer = torch.optim.AdamW(
-        head.parameters(),
-        lr=cfg["optim"]["lr"],
+        [
+            {"params": backbone.parameters(), "lr": lr_backbone},
+            {"params": head.parameters(), "lr": lr_main},
+        ],
         weight_decay=cfg["optim"]["weight_decay"],
     )
 
@@ -94,6 +98,7 @@ def main():
     print(f"Best val rsum: {best_score:.4f}")
 
     ckpt = torch.load(best_path, map_location=device)
+    backbone.load_state_dict(ckpt["backbone"])
     head.load_state_dict(ckpt["head"])
 
     proj_val_metrics, proj_val_feats, proj_val_aux = evaluate(backbone, val_loader, device, head=head)
@@ -118,11 +123,11 @@ def main():
 
     print("\n[Stage1 / Val]")
     for k, v in proj_val_metrics.items():
-        print(f"  {k}: {v:.4f}")
+        print(f" {k}: {v:.4f}")
 
     print("\n[Stage1 / Test]")
     for k, v in proj_test_metrics.items():
-        print(f"  {k}: {v:.4f}")
+        print(f" {k}: {v:.4f}")
 
 
 if __name__ == "__main__":

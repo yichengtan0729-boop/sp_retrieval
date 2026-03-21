@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 from collections import defaultdict
 from pathlib import Path
 import csv
@@ -136,7 +135,6 @@ def compute_retrieval_metrics_from_embeddings(feats):
 
 def save_retrieval_csv_t2i(out_csv: Path, feats, aux, topk: int = 10):
     out_csv.parent.mkdir(parents=True, exist_ok=True)
-
     sim_t2i = aux["sim_t2i"]
     unique_img_ids = aux["unique_img_ids"]
     unique_img_paths = aux["unique_img_paths"]
@@ -144,7 +142,6 @@ def save_retrieval_csv_t2i(out_csv: Path, feats, aux, topk: int = 10):
     with open(out_csv, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(["text_id", "positive_image_id", "rank", "pred_image_id", "score", "pred_image_path"])
-
         for txt_idx, text_id in enumerate(feats["text_ids"]):
             pos_img_id = feats["image_ids"][txt_idx]
             vals, inds = sim_t2i[txt_idx].topk(min(topk, sim_t2i.size(1)))
@@ -166,8 +163,12 @@ def evaluate(backbone, loader, device, head=None):
     return metrics, feats, aux
 
 
-def train_one_epoch(backbone, head, loader, optimizer, device, temperature):
-    backbone.eval()
+def train_one_epoch(backbone, head, loader, optimizer, device, temperature, grad_clip_norm=0.0):
+    if getattr(backbone, "freeze", True):
+        backbone.eval()
+    else:
+        backbone.train()
+
     head.train()
 
     total_loss = 0.0
@@ -177,14 +178,20 @@ def train_one_epoch(backbone, head, loader, optimizer, device, temperature):
         images = _move_images_if_tensor(batch["images"], device)
         texts = batch["texts"]
 
-        with torch.no_grad():
-            out = backbone(images, texts, device=device, return_tokens=False)
-
+        out = backbone(images, texts, device=device, return_tokens=False)
         zi, zt = head(out["image_global"], out["text_global"])
+
         loss = symmetric_contrastive_loss(zi, zt, temperature=temperature)
 
-        optimizer.zero_grad()
+        optimizer.zero_grad(set_to_none=True)
         loss.backward()
+
+        if grad_clip_norm and grad_clip_norm > 0:
+            torch.nn.utils.clip_grad_norm_(
+                list(backbone.parameters()) + list(head.parameters()),
+                grad_clip_norm,
+            )
+
         optimizer.step()
 
         bs = len(texts)
@@ -198,23 +205,33 @@ def fit_stage1(backbone, head, train_loader, val_loader, optimizer, device, cfg,
     best_score = -1.0
     best_path = output_dir / "best_stage1.pt"
     temperature = cfg["train"].get("temperature", 0.07)
+    grad_clip_norm = cfg["train"].get("grad_clip_norm", 0.0)
 
     for epoch in range(1, cfg["train"]["epochs"] + 1):
-        train_stats = train_one_epoch(backbone, head, train_loader, optimizer, device, temperature)
+        train_stats = train_one_epoch(
+            backbone,
+            head,
+            train_loader,
+            optimizer,
+            device,
+            temperature,
+            grad_clip_norm=grad_clip_norm,
+        )
         val_metrics, _, _ = evaluate(backbone, val_loader, device, head=head)
 
         print(f"\nEpoch {epoch}/{cfg['train']['epochs']}")
         print("[Train]")
         for k, v in train_stats.items():
-            print(f"  {k}: {v:.4f}")
+            print(f" {k}: {v:.4f}")
         print("[Val Projected]")
         for k, v in val_metrics.items():
-            print(f"  {k}: {v:.4f}")
+            print(f" {k}: {v:.4f}")
 
         if val_metrics["rsum"] > best_score:
             best_score = val_metrics["rsum"]
             torch.save(
                 {
+                    "backbone": backbone.state_dict(),
                     "head": head.state_dict(),
                     "optimizer": optimizer.state_dict(),
                     "epoch": epoch,

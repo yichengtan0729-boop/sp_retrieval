@@ -1,6 +1,6 @@
 seed: 42
 device: auto
-output_dir: outputs/flickr30k_siglip2_stage1
+output_dir: outputs/flickr30k_siglip2_stage1_ft
 
 dataset:
   annotation_json: data/processed/flickr30k/flickr30k.json
@@ -8,7 +8,7 @@ dataset:
   train_split: train
   val_split: validation
   test_split: test
-  batch_size: 16
+  batch_size: 8
   num_workers: 4
   pin_memory: true
 
@@ -16,7 +16,7 @@ backbone:
   type: siglip2
   model_name: google/siglip2-base-patch16-512
   pretrained: null
-  freeze: true
+  freeze: false
   return_tokens: true
   max_text_len: 64
 
@@ -26,8 +26,10 @@ model:
 
 optim:
   lr: 1.0e-4
+  lr_backbone: 1.0e-5
   weight_decay: 1.0e-4
 
 train:
-  epochs: 5
+  epochs: 8
   temperature: 0.07
+  grad_clip_norm: 1.0
