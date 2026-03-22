@@ -1,16 +1,19 @@
 seed: 42
 device: auto
-output_dir: outputs/flickr30k_siglip2_stage2
+output_dir: outputs/flickr30k_siglip2_stage2_ft
 
 dataset:
   annotation_json: data/processed/flickr30k/flickr30k.json
   images_root: data/raw/flickr30k_hf
+
   train_split: train
   val_split: validation
   test_split: test
-  candidate_cache_train: outputs/flickr30k_siglip2_stage1/candidates_stage1_train_top64.json
-  candidate_cache_val: outputs/flickr30k_siglip2_stage1/candidates_stage1_val_top64.json
-  candidate_cache_test: outputs/flickr30k_siglip2_stage1/candidates_stage1_test_top64.json
+
+  candidate_cache_train: outputs/flickr30k_siglip2_stage1_ft/candidates_stage1_train_top64.json
+  candidate_cache_val: outputs/flickr30k_siglip2_stage1_ft/candidates_stage1_val_top64.json
+  candidate_cache_test: outputs/flickr30k_siglip2_stage1_ft/candidates_stage1_test_top64.json
+
   batch_size: 8
   num_workers: 2
   pin_memory: true
@@ -42,3 +45,5 @@ optim:
 
 train:
   epochs: 5
+
+stage1_ckpt: outputs/flickr30k_siglip2_stage1_ft/best_stage1.pt
